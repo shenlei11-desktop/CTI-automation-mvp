@@ -130,6 +130,19 @@ python -m spacy download en_core_web_sm   # needed for the NER / endpoint tests
 pytest
 ```
 
+## Branching & CI
+
+Trunk-based: `main` is always stable and protected. Work happens on short-lived branches
+merged via PR, named by type:
+
+- `feat/<name>` — new functionality (e.g. `feat/classification-bakeoff`)
+- `fix/<name>` — bug fixes
+- `chore/<name>` — tooling, CI, docs, dependencies
+
+Every push and PR runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml): lint
+(`ruff`), tests (`pytest`), and a Docker image build. `main` requires these checks to
+pass before merging.
+
 ## Repository layout
 
 ```
