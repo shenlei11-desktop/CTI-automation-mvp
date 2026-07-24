@@ -1,0 +1,30 @@
+ICS Advisory (SYNTHETIC SAMPLE) - ICSA-26-XXX-01
+Schneider Electric Modicon PLC - Improper Authentication
+
+SUMMARY
+CISA is aware of active exploitation targeting internet-facing Schneider Electric
+Modicon programmable logic controllers (PLCs) deployed across the water and wastewater
+and electric utility sectors. The activity has been attributed with moderate confidence
+to the threat actor VOLTZITE, whose tooling overlaps with previously reported ELECTRUM
+activity.
+
+TECHNICAL DETAILS
+The vulnerability, tracked as CVE-2026-2841, carries a CVSS v3.1 base score of 9.8.
+Successful exploitation allows an unauthenticated remote attacker to bypass
+authentication and issue unauthorized commands to safety-critical process controllers.
+
+Analysts observed the actor staging payloads from the command-and-control domain
+hxxps://update-modicon[.]net and beaconing to 185[.]220[.]101[.]45 over port 443. A
+malicious firmware implant was recovered with SHA-256 hash
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855. Some victims also
+reported lateral movement to 10[.]0[.]0[.]5 on the internal historian network.
+
+AFFECTED PRODUCTS
+Schneider Electric Modicon M340 and M580 controllers (firmware prior to v3.2) are
+affected. Rockwell Automation ControlLogix devices were assessed but not confirmed
+vulnerable.
+
+MITIGATIONS
+Operators should remove PLC management interfaces from direct internet exposure, segment
+operational technology networks, and apply vendor firmware v3.2 when available. CISA has
+added CVE-2026-2841 to its Known Exploited Vulnerabilities (KEV) catalog.

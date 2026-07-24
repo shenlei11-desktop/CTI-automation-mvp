@@ -1,0 +1,38 @@
+# OT/ICS-relevant threat actors / activity groups (case-insensitive match).
+# Mix of Dragos activity groups and widely-tracked ICS-capable actors.
+# One entry per line. Lines starting with '#' are ignored.
+
+# Dragos activity groups
+VOLTZITE
+ELECTRUM
+XENOTIME
+KAMACITE
+CHERNOVITE
+BENTONITE
+ERYTHRITE
+GANANITE
+LAURIONITE
+MAGNALLIUM
+PARISITE
+RASPITE
+STIBNITE
+TALONITE
+VANADINITE
+WASSONITE
+KOSTOVITE
+PETROVITE
+GRAPHITE
+
+# Cross-industry / commonly named in ICS reporting
+Sandworm
+Sandworm Team
+Volt Typhoon
+APT28
+APT33
+APT34
+Dragonfly
+Energetic Bear
+Berserk Bear
+TEMP.Veles
+Lazarus Group
+OilRig

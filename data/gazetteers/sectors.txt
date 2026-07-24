@@ -1,0 +1,29 @@
+# Critical-infrastructure sectors (case-insensitive match). Multi-word phrases are
+# matched before their single-word parts (e.g. "water and wastewater" before "water").
+# One entry per line. Lines starting with '#' are ignored.
+
+water and wastewater
+wastewater
+water
+electric
+electricity
+power grid
+energy
+oil and gas
+natural gas
+pipeline
+critical manufacturing
+manufacturing
+chemical
+nuclear
+transportation
+rail
+maritime
+aviation
+healthcare
+public health
+food and agriculture
+dams
+utilities
+telecommunications
+defense industrial base

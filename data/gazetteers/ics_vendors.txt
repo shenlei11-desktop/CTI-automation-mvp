@@ -1,0 +1,40 @@
+# ICS/OT vendors and widely-recognized product lines (case-insensitive match).
+# One entry per line. Lines starting with '#' are ignored.
+
+Siemens
+Schneider Electric
+Modicon
+Rockwell Automation
+Allen-Bradley
+ControlLogix
+General Electric
+Honeywell
+Emerson
+ABB
+Yokogawa
+Mitsubishi Electric
+Omron
+Phoenix Contact
+WAGO
+Moxa
+Advantech
+Hitachi Energy
+Hitachi
+Schweitzer Engineering Laboratories
+Wonderware
+AVEVA
+Bosch Rexroth
+Beckhoff
+Delta Electronics
+Fuji Electric
+Toshiba
+CODESYS
+Unitronics
+Red Lion
+Belden
+Hirschmann
+Johnson Controls
+SICK
+Pilz
+Festo
+Danfoss

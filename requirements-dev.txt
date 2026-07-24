@@ -1,0 +1,5 @@
+# Development / test dependencies
+-r requirements.txt
+pytest>=8.0,<9.0
+httpx>=0.27,<1.0        # used by fastapi.testclient / starlette TestClient
+ruff>=0.6,<1.0
