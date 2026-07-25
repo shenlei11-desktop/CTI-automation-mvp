@@ -16,6 +16,16 @@ env/
 .ruff_cache/
 .mypy_cache/
 
+# Notebooks
+.ipynb_checkpoints/
+
+# Research: user's real report excerpts stay local (exact path, not a glob, so it
+# cannot shadow the committed dataset or its .example schema file).
+research/data/labeled_dataset.local.jsonl
+
+# Research: on-disk LLM response cache (regenerable, machine/run-specific).
+research/data/.llm_cache.json
+
 # Environment / secrets
 .env
 

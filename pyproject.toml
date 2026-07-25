@@ -9,6 +9,10 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Exploratory notebook cells (loose cell-order variable reuse, deliberate prints) would
+# trip lint rules for reasons unrelated to code quality. research/lib/*.py is real
+# reusable code and stays fully linted.
+extend-exclude = ["research/*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
