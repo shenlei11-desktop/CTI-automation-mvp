@@ -1,0 +1,19 @@
+# Research-only dependencies for the classification method bake-off notebook
+# (research/classification_bakeoff.ipynb). Deliberately NOT merged into
+# requirements.txt / requirements-dev.txt, and CI never needs them — this is one-off
+# R&D, not shipped app code. Install into the existing project .venv:
+#   pip install -r research/requirements-research.txt
+#
+# Embeddings use fastembed (ONNX runtime), NOT sentence-transformers, on purpose:
+# sentence-transformers pulls in PyTorch, whose deeply-nested license files overflow
+# Windows' 260-char path limit under this project's long OneDrive path (WinError 206).
+# fastembed has no torch dependency, installs cleanly here, and is plenty for this task.
+
+jupyterlab>=4.2,<5.0
+pandas>=2.2,<3.0
+numpy>=1.26,<3.0
+matplotlib>=3.9,<4.0
+fastembed>=0.4,<1.0
+scikit-learn>=1.5,<2.0
+ollama>=0.3,<1.0
+requests>=2.32,<3.0
