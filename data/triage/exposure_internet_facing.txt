@@ -1,0 +1,12 @@
+# Phrases indicating a device/system is exposed to the internet (case-insensitive
+# substring match). One phrase per line. Lines starting with '#' are ignored.
+
+internet-facing
+internet facing
+publicly accessible
+exposed to the internet
+reachable from the public internet
+externally accessible
+internet-exposed
+internet exposed
+directly accessible from the internet

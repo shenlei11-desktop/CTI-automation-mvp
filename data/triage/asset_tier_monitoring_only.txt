@@ -1,0 +1,10 @@
+# Phrases indicating a monitoring-only/non-critical asset (case-insensitive substring
+# match). One phrase per line. '#' lines are ignored.
+
+monitoring only
+monitoring-only
+read-only historian
+data acquisition only
+non-critical
+informational display
+view-only

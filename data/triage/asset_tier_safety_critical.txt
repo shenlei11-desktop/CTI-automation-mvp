@@ -1,0 +1,10 @@
+# Phrases indicating a safety-critical asset (case-insensitive substring match).
+# One phrase per line. '#' lines are ignored.
+
+safety-critical
+safety critical
+safety instrumented system
+emergency shutdown system
+protective relay
+safety instrumented function
+loss of safety
