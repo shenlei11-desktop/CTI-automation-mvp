@@ -92,3 +92,44 @@ def test_ingest_pdf_invalid_file_returns_422(client):
         "/ingest/pdf", files={"file": ("bad.pdf", b"not a real pdf", "application/pdf")}
     )
     assert resp.status_code == 422
+
+
+_SAMPLE_FEED_XML = b"""<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel>
+<item>
+  <title>Siemens Parasolid</title>
+  <link>https://www.cisa.gov/news-events/ics-advisories/icsa-26-225-10</link>
+  <description>ignored</description>
+  <pubDate>Thu, 13 Aug 26 12:00:00 +0000</pubDate>
+</item>
+</channel></rss>
+"""
+
+
+def test_ingest_feed(client, monkeypatch):
+    class _FakeResponse:
+        content = _SAMPLE_FEED_XML
+
+        def raise_for_status(self) -> None:
+            pass
+
+    monkeypatch.setattr("requests.get", lambda *a, **k: _FakeResponse())
+
+    resp = client.get("/ingest/feed?limit=5")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["title"] == "Siemens Parasolid"
+    assert "/ics-advisories/" in items[0]["url"]
+
+
+def test_ingest_feed_fetch_failure_returns_502(client, monkeypatch):
+    import requests
+
+    def _raise(*a, **k):
+        raise requests.ConnectionError("boom")
+
+    monkeypatch.setattr("requests.get", _raise)
+
+    resp = client.get("/ingest/feed")
+    assert resp.status_code == 502

@@ -42,3 +42,15 @@ class IngestResponse(BaseModel):
     title: str | None = None
     source_type: IngestSourceType
     quality: IngestQuality
+
+
+class FeedItem(BaseModel):
+    """One live CISA ICS advisory, for the demo page's autofetch feature."""
+
+    title: str
+    url: str
+    published: str | None = Field(None, description="RSS pubDate, as published (not parsed).")
+
+
+class FeedResponse(BaseModel):
+    items: list[FeedItem]
