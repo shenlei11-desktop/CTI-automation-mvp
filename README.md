@@ -140,28 +140,36 @@ Web app: <http://localhost:4173>
 
 ### Option B — Local (venv + npm)
 
+One-time setup:
+
 ```powershell
-# Windows PowerShell -- backend
+# Windows PowerShell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-dev.txt
 python -m spacy download en_core_web_sm
-uvicorn app.main:app --reload
+cd frontend; npm install; cd ..
 ```
 
 ```bash
-# macOS / Linux -- backend
+# macOS / Linux
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m spacy download en_core_web_sm
-uvicorn app.main:app --reload
+(cd frontend && npm install)
+```
+
+Then, every time you want to run it — one command starts both the backend
+(`uvicorn --reload`) and the frontend (`vite`) together:
+
+```powershell
+# Windows PowerShell
+.\dev.ps1
 ```
 
 ```bash
-# frontend, in a second terminal (same on all platforms)
-cd frontend
-npm install
-npm run dev
+# macOS / Linux
+./dev.sh
 ```
 
 Interactive API docs: <http://localhost:8000/docs> · Web app: <http://localhost:5173>
@@ -387,6 +395,7 @@ pass before merging.
 ## Repository layout
 
 ```
+dev.ps1 / dev.sh    one-command local dev launcher: backend + frontend together
 app/
   main.py            FastAPI app (/health, /ingest, /extract, /classify, /triage, /advisory)
   config.py          settings (pydantic-settings)
