@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     app_name: str = "cti-triage"
     database_url: str = "postgresql://cti:cti@localhost:5432/cti"
     spacy_model: str = "en_core_web_sm"
+    # Local dev frontend origins (Vite dev server + `vite preview`). Local-only for
+    # now -- no public deployment, so no prod origin is configured here yet.
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:4173"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -20,3 +20,10 @@ langgraph>=1.0,<2.0
 
 # Triage: live CISA KEV catalog refresh (falls back to a committed snapshot on failure).
 requests>=2.32,<3.0
+
+# Ingestion: PDF / HTML -> plain text. trafilatura is pure Python + lxml (no PyTorch-style
+# nested-path risk) and does the boilerplate stripping a naive <p>-tag scrape can't.
+trafilatura>=2.0,<3.0
+pypdf>=6.0,<7.0
+# Required by FastAPI for the PDF upload endpoint's UploadFile/Form handling.
+python-multipart>=0.0.9,<1.0
