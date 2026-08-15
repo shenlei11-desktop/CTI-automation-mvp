@@ -1,14 +1,14 @@
 """FastAPI application entry point.
 
-Registers a router per pipeline stage, each independently callable. LangGraph
-orchestration will register its own router here the same way once built.
+Registers a router per pipeline stage, each independently callable, plus the
+orchestration router that wraps all three into one LangGraph agent.
 """
 
 from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.api.routes import classification, extraction, triage
+from app.api.routes import classification, extraction, orchestration, triage
 from app.config import get_settings
 
 settings = get_settings()
@@ -19,15 +19,17 @@ app = FastAPI(
     description=(
         "Agent-assisted CTI triage for OT/ICS threat reports. Extraction (IOCs + "
         "entities with source-sentence provenance), classification (ATT&CK-for-ICS "
-        "technique matching via embedding retrieval + cross-encoder reranking), and "
+        "technique matching via embedding retrieval + cross-encoder reranking), "
         "triage (a fully-traceable severity cascade, with a clarification-request "
-        "branch instead of guessing)."
+        "branch instead of guessing), and orchestration (a LangGraph agent wrapping "
+        "all three, with real conditional edges and a trace log)."
     ),
 )
 
 app.include_router(extraction.router)
 app.include_router(classification.router)
 app.include_router(triage.router)
+app.include_router(orchestration.router)
 
 
 @app.get("/health", tags=["meta"], summary="Liveness check")

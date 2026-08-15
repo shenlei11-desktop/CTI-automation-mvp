@@ -7,9 +7,10 @@ severity-ranked security advisory, automating the tedious, high-volume parts of 
 while keeping the *judgment* (severity scoring especially) as interpretable rules rather
 than a black-box model.
 
-> **Status: extraction + classification + triage all working.** LangGraph orchestration
-> (wrapping the three into one agent graph, with a trace log) is next — see
-> [Roadmap](#roadmap).
+> **Status: the full pipeline is working end to end.** Extraction, classification,
+> triage, and LangGraph orchestration (wrapping all three into one agent graph, with
+> real conditional edges and a trace log) are all implemented — see [Roadmap](#roadmap)
+> for what's next.
 
 ## What's implemented
 
@@ -57,6 +58,24 @@ assessment** per CVE:
   sample advisory *claims* KEV listing, but the real CISA feed shows this fictional CVE
   as `not_listed`, and the system reports that honestly rather than taking the report's
   word for it.
+
+`POST /advisory` wraps all three into one **LangGraph** agent and returns a single
+structured advisory plus a step-by-step trace:
+
+- **Two real conditional edges** — the point of the whole module. If extraction flags
+  `flag_for_review`, the graph **hard-stops**: classification and triage never run, and
+  the response's `classification`/`triage` fields come back `null` rather than pretending
+  a distrusted input produced a trustworthy result. If triage's decision comes back
+  `needs_clarification`, the graph still attaches the provisional finding — the agent's
+  "ask a human instead of guessing" moment is visible in the trace, not silent.
+- **`status`** on the response is one of `completed`, `needs_extraction_review`, or
+  `needs_clarification`, so a caller always knows *why* a run didn't reach a clean finish.
+- **`trace`** is an ordered list of `{node, detail}` entries — every node the run passed
+  through and a plain-language summary of what it did, so the whole decision path is
+  auditable after the fact, not just the final answer.
+- **`report`** is a human-readable rendered advisory (technique matches, per-CVE
+  severity with its full rule trace, and any review/clarification caveat spelled out)
+  alongside the structured JSON.
 
 ## Design decisions worth noting
 
@@ -227,6 +246,48 @@ Abridged response:
 }
 ```
 
+```powershell
+# PowerShell — /advisory, the full agent pipeline in one call
+$body = @{
+  text      = (Get-Content -Raw data/samples/sample_advisory_01.txt)
+  report_id = "sample-01"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/advisory `
+  -ContentType application/json -Body $body | ConvertTo-Json -Depth 8
+```
+
+```bash
+# curl
+curl -X POST http://localhost:8000/advisory \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"...","report_id":"demo"}'
+```
+
+Abridged response:
+
+```json
+{
+  "report_id": "sample-01",
+  "status": "completed",
+  "trace": [
+    { "node": "extraction", "detail": "Extracted 6 IOC(s) and 3 entity(ies); recommendation: proceed." },
+    { "node": "classification", "detail": "Classified 11 behaviour(s) into ATT&CK-for-ICS techniques." },
+    { "node": "triage", "detail": "Scored 1 finding(s); decision: scored." },
+    { "node": "finalize", "detail": "Pipeline completed; advisory ready." }
+  ],
+  "extraction": { "...": "same shape as /extract" },
+  "classification": { "...": "same shape as /classify" },
+  "triage": { "...": "same shape as /triage" },
+  "report": "Advisory for report: sample-01\n\nATT&CK-for-ICS techniques observed:\n  - T0883 Internet Accessible Device ...\n\nSeverity (exposure: internet_facing, asset tier: safety_critical):\n  - CVE-2026-2841: Critical (KEV: not_listed)\n      * cvss_base: CVSS score 9.8 maps to base band Critical.\n      ...\n\nStatus: completed"
+}
+```
+
+A short stub text (e.g. `"too short"`) demonstrates the hard stop instead:
+`status` comes back `needs_extraction_review`, `trace` is just
+`["extraction", "needs_extraction_review"]`, and `classification`/`triage` are both
+`null` — proving classification and triage genuinely never ran, rather than having run
+and been discarded.
+
 ## Testing
 
 ```bash
@@ -252,15 +313,15 @@ pass before merging.
 
 ```
 app/
-  main.py            FastAPI app (/health, /extract, /classify, /triage)
+  main.py            FastAPI app (/health, /extract, /classify, /triage, /advisory)
   config.py          settings (pydantic-settings)
   api/routes/        HTTP routes
   schemas/           Pydantic models (incl. the provenance model)
   extraction/        ioc.py · ner.py · provenance.py · service.py   <- implemented
   classification/    corpus.py · retrieval.py · reranking.py · service.py   <- implemented
   triage/            signals.py · kev.py · cascade.py · service.py  <- implemented
+  orchestration/     state.py · nodes.py · graph.py · report.py     <- implemented
   ingestion/         placeholder (later: PDF/HTML -> text)
-  orchestration/     placeholder (next: LangGraph agent graph + trace)
 data/
   gazetteers/        curated threat-actor / ICS-vendor / sector lists
   classification/    committed ATT&CK-for-ICS technique corpus (79 techniques)
@@ -284,8 +345,6 @@ Documented honestly rather than hidden — an expanded version will ship with th
   are only caught by generic spaCy NER (as `organization`), if at all.
 - **Sentence segmentation is rule-based** (spaCy `sentencizer`), so provenance can be off
   on unusual formatting (tables, bullet fragments).
-- **The quality summary is a metric, not yet a decision.** The `proceed` /
-  `flag_for_review` branch becomes real agent behaviour once orchestration exists.
 - **Classification's confidence threshold isn't rigorously cross-validated.** It's
   *derived*, not guessed — a Youden's-J search over 259 real labeled examples — but
   that's still not enough data over 79 classes with a general-purpose reranker to trust
@@ -316,6 +375,16 @@ Documented honestly rather than hidden — an expanded version will ship with th
   classification corpus is only 79 vectors — trivial in-memory numpy, no DB needed for
   correctness at this scale. A better eventual use is persisting orchestration's agent
   trace / advisory audit trail, not vector search.
+- **The graph is strictly sequential and stateless between calls.** No parallel
+  fan-out (classification and triage both only need `text`, but run one after the
+  other, not concurrently), and no checkpointing — each `/advisory` call runs start to
+  finish in one request with nothing persisted, so a run can't be paused, replayed, or
+  resumed. Fine at this scale; would need addressing before this became a long-running
+  or multi-report batch service.
+- **`classify_text`'s unvalidated chunking heuristic (above) is exactly what powers
+  `/advisory`'s classification step.** The standalone `/classify` endpoint sidesteps
+  this by taking caller-supplied behaviours directly, but the orchestrated pipeline has
+  no such escape hatch — it always auto-chunks.
 
 ## Roadmap
 
@@ -324,8 +393,8 @@ Documented honestly rather than hidden — an expanded version will ship with th
 - ~~Triage: a hand-designed, fully-traceable severity cascade (CVSS band × exposure ×
   asset-criticality × CISA KEV), with the *clarification-vs-guess* branch — the core
   agentic decision.~~ **Done.**
-- **Next** — LangGraph orchestration wrapping extraction → classification → triage,
-  with the extraction and triage decisions as real conditional edges, plus an agent
-  trace log.
-- **Later** — React frontend (advisory + agent trace side by side), scale evaluation to
+- ~~LangGraph orchestration wrapping extraction → classification → triage, with the
+  extraction and triage decisions as real conditional edges, plus an agent trace
+  log.~~ **Done.**
+- **Next** — React frontend (advisory + agent trace side by side), scale evaluation to
   ~25 reports, and the writeup (precision/recall, ranking-agreement, limitations).
