@@ -29,6 +29,11 @@ class TechniqueRecord:
     tactics: list[str]  # kill-chain phase names, e.g. ["impair-process-control"]
     description: str  # short/truncated — used for the embedding corpus text
     description_full: str  # untruncated — used for reranker candidate text
+    url: str  # canonical https://attack.mitre.org/techniques/<id> page
+    mitigation: str  # course-of-action text — display only, not used for matching
+    # (it describes the fix, not attacker behaviour, so it wouldn't help retrieval or
+    # reranking; see research/lib/attack_data.py's module docstring for the measured
+    # reasoning). "" if MITRE has no linked mitigation for this technique.
 
 
 @functools.lru_cache(maxsize=1)

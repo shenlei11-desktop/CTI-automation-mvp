@@ -125,12 +125,14 @@ def _build_rollup(results: list[BehaviorClassification]) -> list[TechniqueRollup
         if current_best is None or top.rerank_score > current_best[1].rerank_score:
             best[top.technique_id] = (behavior, top)
 
+    technique_by_id = get_technique_by_id()
     rollups = [
         TechniqueRollup(
             technique_id=technique_id,
             technique_name=match.technique_name,
             tactics=match.tactics,
             attack_url=_ATTACK_URL_TEMPLATE.format(technique_id=technique_id),
+            mitigation=technique_by_id[technique_id].mitigation,
             best_rerank_score=match.rerank_score,
             best_margin=behavior.quality.top1_margin,
             recommendation=behavior.quality.recommendation,

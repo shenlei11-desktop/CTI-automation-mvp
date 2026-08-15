@@ -94,6 +94,9 @@ class TechniqueRollup(BaseModel):
     technique_name: str
     tactics: list[str]
     attack_url: str = Field(..., description="Canonical MITRE ATT&CK technique page.")
+    mitigation: str = Field(
+        "", description="MITRE mitigation guidance for this technique, if any. Display only."
+    )
     best_rerank_score: float = Field(
         ..., description="Highest rerank_score among this technique's evidence."
     )

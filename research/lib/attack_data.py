@@ -13,6 +13,16 @@ We keep top-level techniques only (IDs like ``T0836``) and drop sub-techniques
 technique *corpus* must stay technique reference text (name/tactics/description) —
 never mix procedure text into it, or a method would effectively be matching against
 its own answers.
+
+**On detection text:** ICS ATT&CK's current STIX data model has no
+``x_mitre_detection`` / ``x_mitre_data_sources`` / ``x_mitre_platforms`` fields on
+technique objects at all (verified empirically against a live fetch: 0/97 populated).
+Detection guidance instead lives three relationship-hops away (attack-pattern ->
+``detects`` -> a detection-strategy -> ``x_mitre_analytic_refs`` -> an analytic's
+description) and reads as defender monitoring guidance ("Monitor for unexpected access
+to files...") — a poor semantic match for attacker-behaviour text, so it isn't
+extracted here. Mitigation text (``course-of-action`` objects via ``mitigates``
+relationships) has 96/97 coverage and real prose, and *is* extracted below.
 """
 
 from __future__ import annotations
@@ -44,6 +54,8 @@ class TechniqueRecord:
     tactics: list[str]  # kill-chain phase names, e.g. ["impair-process-control"]
     description: str  # cleaned + truncated, for compact full-catalogue prompts
     description_full: str  # cleaned but untruncated, for hybrid candidate display
+    url: str  # canonical https://attack.mitre.org/techniques/<id> page
+    mitigation: str  # joined course-of-action text via `mitigates` relationships, "" if none
 
 
 def _clean(text: str) -> str:
@@ -71,8 +83,37 @@ def _external_id(obj: dict) -> str | None:
     return None
 
 
+def _external_url(obj: dict) -> str:
+    for ref in obj.get("external_references", []):
+        if ref.get("source_name") == "mitre-attack" and "url" in ref:
+            return ref["url"]
+    return ""
+
+
+def _mitigation_text_by_technique_stix_id(bundle: dict) -> dict[str, str]:
+    """Join course-of-action description text for every technique via `mitigates`
+    relationships. Keyed by the technique's STIX id (not its ATT&CK id), matching how
+    `parse_bundle` looks objects up before an ATT&CK id has even been read.
+    """
+    coa_by_stix_id = {
+        obj["id"]: obj for obj in bundle.get("objects", []) if obj.get("type") == "course-of-action"
+    }
+    mitigations: dict[str, list[str]] = {}
+    for obj in bundle.get("objects", []):
+        if obj.get("type") != "relationship" or obj.get("relationship_type") != "mitigates":
+            continue
+        coa = coa_by_stix_id.get(obj.get("source_ref", ""))
+        if not coa:
+            continue
+        text = _clean(coa.get("description") or coa.get("name", ""))
+        if text:
+            mitigations.setdefault(obj["target_ref"], []).append(text)
+    return {stix_id: " ".join(texts) for stix_id, texts in mitigations.items()}
+
+
 def parse_bundle(bundle: dict) -> list[TechniqueRecord]:
     """Extract top-level technique records from a raw ATT&CK STIX bundle."""
+    mitigation_by_stix_id = _mitigation_text_by_technique_stix_id(bundle)
     records: list[TechniqueRecord] = []
     for obj in bundle.get("objects", []):
         if obj.get("type") != "attack-pattern":
@@ -90,6 +131,8 @@ def parse_bundle(bundle: dict) -> list[TechniqueRecord]:
                 tactics=[p["phase_name"] for p in obj.get("kill_chain_phases", [])],
                 description=_shorten(full),
                 description_full=full,
+                url=_external_url(obj),
+                mitigation=mitigation_by_stix_id.get(obj["id"], ""),
             )
         )
     records.sort(key=lambda r: r.id)
