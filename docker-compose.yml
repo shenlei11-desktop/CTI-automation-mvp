@@ -1,6 +1,7 @@
-# Local dev stack. Day 1 uses only the `api` service, but `db` (Postgres + pgvector)
-# comes up too so the full documented infrastructure is proven early. The classification
-# stage (Week 1) will store ATT&CK-for-ICS technique embeddings in it.
+# Local dev stack. `db` (Postgres + pgvector) is unused by the app today but proves
+# the infra; `web` is the React frontend, which calls `api` directly from the browser
+# via its published port (localhost:8000) -- not through the Docker network -- so no
+# API base URL wiring is needed here.
 
 services:
   api:
@@ -19,6 +20,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  web:
+    build: ./frontend
+    container_name: cti-web
+    ports:
+      - "4173:4173"
+    depends_on:
+      - api
 
   db:
     image: pgvector/pgvector:pg16

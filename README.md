@@ -7,10 +7,25 @@ severity-ranked security advisory, automating the tedious, high-volume parts of 
 while keeping the *judgment* (severity scoring especially) as interpretable rules rather
 than a black-box model.
 
-> **Status: the full pipeline is working end to end.** Ingestion, extraction,
-> classification, triage, and LangGraph orchestration (wrapping the middle three into
-> one agent graph, with real conditional edges and a trace log) are all implemented —
-> see [Roadmap](#roadmap) for what's next.
+> **Status: the full pipeline and web app are working end to end.** Ingestion,
+> extraction, classification, triage, LangGraph orchestration (wrapping the middle
+> three into one agent graph, with real conditional edges and a trace log), and a
+> two-page React frontend are all implemented — see [Roadmap](#roadmap) for what's next.
+
+## The web app
+
+A two-page React + TypeScript + Tailwind app in [`frontend/`](frontend/), talking
+directly to the FastAPI backend (no separate backend-for-frontend layer):
+
+- **Overview** (`/`) — the pitch: what the tool is and why it's built this way, a
+  walkthrough of the five-stage pipeline, the tech stack, and a hand-built diagram
+  that calls out the two agentic decision branches, not just a generic flow chart.
+- **Try It** (`/demo`) — the proof: paste text/HTML, fetch a real report by URL, or
+  upload a PDF and run it through the real backend, live. Three canned examples give
+  a zero-typing tour of both decision branches (`needs_extraction_review`,
+  `needs_clarification`) plus the fully-scored happy path, each hand-verified against
+  the running backend. Results render the full agent trace, extracted IOCs/entities,
+  ATT&CK-for-ICS matches, and per-CVE severity with its complete rule trace.
 
 ## What's implemented
 
@@ -107,8 +122,8 @@ structured advisory plus a step-by-step trace:
 
 ### Option A — Docker Compose (full stack)
 
-Brings up the API plus Postgres/pgvector (the DB is currently unused but proves the
-infra; see [Known limitations](#known-limitations)):
+Brings up the API, the web app, and Postgres/pgvector (the DB is currently unused but
+proves the infra; see [Known limitations](#known-limitations)):
 
 ```bash
 docker compose up --build
@@ -121,10 +136,12 @@ curl http://localhost:8000/health
 # {"status":"ok","app":"cti-triage"}
 ```
 
-### Option B — Local (venv)
+Web app: <http://localhost:4173>
+
+### Option B — Local (venv + npm)
 
 ```powershell
-# Windows PowerShell
+# Windows PowerShell -- backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-dev.txt
@@ -133,14 +150,21 @@ uvicorn app.main:app --reload
 ```
 
 ```bash
-# macOS / Linux
+# macOS / Linux -- backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m spacy download en_core_web_sm
 uvicorn app.main:app --reload
 ```
 
-Interactive API docs: <http://localhost:8000/docs>
+```bash
+# frontend, in a second terminal (same on all platforms)
+cd frontend
+npm install
+npm run dev
+```
+
+Interactive API docs: <http://localhost:8000/docs> · Web app: <http://localhost:5173>
 
 ## Using the endpoints
 
@@ -332,9 +356,19 @@ and been discarded.
 ## Testing
 
 ```bash
+# backend
 pip install -r requirements-dev.txt
 python -m spacy download en_core_web_sm   # needed for the NER / endpoint tests
 pytest
+```
+
+```bash
+# frontend -- lint + type-check + build (no component/e2e test suite, see
+# Known limitations)
+cd frontend
+npm ci
+npm run lint
+npm run build
 ```
 
 ## Branching & CI
@@ -371,6 +405,11 @@ data/
   samples/           sample report text (synthetic seed + your real reports)
 research/            Phase-1 R&D: classification method bake-off + confidence calibration
 tests/               pytest unit + endpoint tests
+frontend/            React + TypeScript + Tailwind web app <- implemented
+  src/api/           typed fetch client + TS types mirroring the Pydantic schemas
+  src/pages/         HomePage.tsx (overview) · DemoPage.tsx (interactive demo)
+  src/components/    ArchitectureDiagram, StatusBadge, TraceTimeline, IOCTable,
+                      TechniqueList, SeverityCard, InputPanel, ExampleButtons
 ```
 
 ## Known limitations
@@ -436,6 +475,19 @@ Documented honestly rather than hidden — an expanded version will ship with th
   takes plain text; turning a URL/PDF into an advisory in one call means calling
   `/ingest` first and passing its `text` to `/advisory` — a deliberate choice to keep
   the already-tested graph untouched, not an oversight.
+- **The web app is local-only by design.** No public deployment, no prod CORS origin
+  configured — `cors_origins` in `app/config.py` only allows the local Vite dev/preview
+  ports. Deploying it publicly would need picking hosts, wiring a prod origin, and an
+  API base URL that isn't a hardcoded `localhost:8000` fallback.
+- **No automated frontend tests.** CI runs `oxlint` + a TypeScript build (`tsc -b`) on
+  every push, which catches type errors and lint issues, but there's no component or
+  end-to-end test suite — reasonable for a two-page portfolio app, verified this
+  session by hand (dev server, production preview build, and the full
+  `docker compose up --build` stack, all against the real backend) rather than by
+  Playwright/RTL.
+- **The TS types in `frontend/src/api/types.ts` are hand-kept in sync with the Pydantic
+  schemas**, not generated. A backend field rename won't fail loudly on the frontend
+  side until something actually breaks at runtime.
 
 ## Roadmap
 
@@ -448,7 +500,7 @@ Documented honestly rather than hidden — an expanded version will ship with th
   extraction and triage decisions as real conditional edges, plus an agent trace
   log.~~ **Done.**
 - ~~Ingestion: PDF/HTML/URL → plain text.~~ **Done.**
-- **Next** — a two-page React web app: a showcase page (purpose, workflow, tech stack,
-  architecture diagram) and an interactive demo page against the real backend.
-- **Later** — scale evaluation to ~25 reports, and the writeup (precision/recall,
+- ~~A two-page React web app: an overview page (purpose, workflow, tech stack,
+  architecture diagram) and an interactive demo page against the real backend.~~ **Done.**
+- **Next** — scale evaluation to ~25 reports, and the writeup (precision/recall,
   ranking-agreement, limitations).
