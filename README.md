@@ -7,11 +7,10 @@ severity-ranked security advisory, automating the tedious, high-volume parts of 
 while keeping the *judgment* (severity scoring especially) as interpretable rules rather
 than a black-box model.
 
-> **Status: Day 1 — extraction only.** This slice stands up the repo, local infra, and a
-> single working `POST /extract` endpoint. Classification, triage, and LangGraph
-> orchestration are intentionally not built yet (see [Roadmap](#roadmap)).
+> **Status: extraction + triage working.** Classification and LangGraph orchestration
+> are next (see [Roadmap](#roadmap)).
 
-## What Day 1 does
+## What's implemented
 
 `POST /extract` takes raw report text and returns:
 
@@ -23,7 +22,26 @@ than a black-box model.
 - **Provenance** — every extracted fact carries the **source sentence** and character
   offsets it came from.
 - **Quality summary** — a lightweight signal (`proceed` / `flag_for_review`) that the
-  Week-2 extraction agent will later branch on.
+  extraction agent will later branch on in orchestration.
+
+`POST /triage` takes raw report text and returns a **fully-traceable severity
+assessment** per CVE:
+
+- **The severity cascade**: base band from the official FIRST.org CVSS v3.x scale,
+  then exposure (internet-facing / segmented) and asset-criticality tier
+  (safety-critical / process-critical / monitoring-only) each step the band up/down one
+  ordinal notch, then CISA **KEV** listing floors the result at High regardless of the
+  other factors. Every step — including no-ops — is recorded in a `rule_trace`, so
+  every severity score shows exactly which rule produced it.
+- **The core agentic decision**: if exposure or asset-criticality tier can't be
+  confidently determined from the report text, triage flags `needs_clarification`
+  (with a provisional score still attached, never withheld) instead of guessing.
+  Deliberately does *not* trigger on missing CVSS, which gets a documented neutral
+  default (Medium) instead.
+- **KEV is checked independently**, not trusted from the report text — the bundled
+  sample advisory *claims* KEV listing, but the real CISA feed shows this fictional CVE
+  as `not_listed`, and the system reports that honestly rather than taking the report's
+  word for it.
 
 ## Design decisions worth noting
 
@@ -122,6 +140,44 @@ Abridged response shape:
 }
 ```
 
+```powershell
+# PowerShell — /triage, run the bundled sample advisory
+$body = @{
+  text      = (Get-Content -Raw data/samples/sample_advisory_01.txt)
+  report_id = "sample-01"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/triage `
+  -ContentType application/json -Body $body | ConvertTo-Json -Depth 6
+```
+
+```bash
+# curl
+curl -X POST http://localhost:8000/triage \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"A vulnerability tracked as CVE-2026-9999 has a CVSS v3.1 base score of 8.1. The interface is internet-facing and controls a safety-critical process.","report_id":"demo"}'
+```
+
+Abridged response:
+
+```json
+{
+  "context": { "exposure": "internet_facing", "asset_tier": "safety_critical" },
+  "findings": [
+    {
+      "cve_id": "CVE-2026-2841", "cvss_score": 9.8, "kev_status": "not_listed",
+      "severity": "Critical",
+      "rule_trace": [
+        { "rule": "cvss_base", "detail": "CVSS score 9.8 maps to base band Critical.", "resulting_band": "Critical" },
+        { "rule": "exposure", "detail": "Internet-facing: escalated one band.", "resulting_band": "Critical" },
+        { "rule": "asset_tier", "detail": "Safety-critical asset: escalated one band.", "resulting_band": "Critical" },
+        { "rule": "kev", "detail": "not confirmed exploited; no adjustment applied.", "resulting_band": "Critical" }
+      ]
+    }
+  ],
+  "quality": { "decision": "scored", "reason": "Exposure and asset-criticality tier were both specified..." }
+}
+```
+
 ## Testing
 
 ```bash
@@ -147,22 +203,25 @@ pass before merging.
 
 ```
 app/
-  main.py            FastAPI app (/health, /extract)
+  main.py            FastAPI app (/health, /extract, /triage)
   config.py          settings (pydantic-settings)
   api/routes/        HTTP routes
   schemas/           Pydantic models (incl. the provenance model)
   extraction/        ioc.py · ner.py · provenance.py · service.py   <- implemented
+  triage/            signals.py · kev.py · cascade.py · service.py  <- implemented
   ingestion/         placeholder (later: PDF/HTML -> text)
-  classification/    placeholder (Week 1: ATT&CK-for-ICS mapping)
-  triage/            placeholder (Week 2: severity cascade + clarification branch)
-  orchestration/     placeholder (Week 2: LangGraph agent graph + trace)
+  classification/    placeholder (next: ATT&CK-for-ICS mapping, Phase-1 R&D bake-off done)
+  orchestration/     placeholder (next: LangGraph agent graph + trace)
 data/
   gazetteers/        curated threat-actor / ICS-vendor / sector lists
+  triage/            curated exposure / asset-criticality-tier keyword lists
+  kev/               committed CISA Known Exploited Vulnerabilities snapshot
   samples/           sample report text (synthetic seed + your real reports)
+research/            Phase-1 R&D: classification method bake-off + confidence calibration
 tests/               pytest unit + endpoint tests
 ```
 
-## Known limitations (Day 1)
+## Known limitations
 
 Documented honestly rather than hidden — an expanded version will ship with the final writeup.
 
@@ -176,15 +235,28 @@ Documented honestly rather than hidden — an expanded version will ship with th
 - **Sentence segmentation is rule-based** (spaCy `sentencizer`), so provenance can be off
   on unusual formatting (tables, bullet fragments).
 - **The quality summary is a metric, not yet a decision.** The `proceed` /
-  `flag_for_review` branch becomes real agent behaviour in Week 2.
+  `flag_for_review` branch becomes real agent behaviour once orchestration exists.
+- **Exposure/asset-tier detection is plain keyword matching**, not NLP — it can't
+  distinguish a current-state claim from a recommendation (e.g. "the interface is
+  internet-facing... operators should segment the network" resolves to `unknown`,
+  correctly but conservatively) or catch novel phrasing outside the curated lists.
+- **CVE-to-CVSS pairing is same-sentence-or-nothing.** A report with several CVEs and
+  several CVSS mentions spread across paragraphs will leave some CVEs unassociated
+  rather than guess a wrong pairing.
+- **The severity cascade's specific rule design (band-stepping, KEV-as-floor, the
+  neutral CVSS default) is a considered but original design**, not derived from a
+  published standard beyond the CVSS band boundaries themselves — a legitimate
+  alternative (e.g. numeric multipliers) exists and was deliberately not chosen; see
+  `app/triage/cascade.py`'s docstring for the reasoning.
 
 ## Roadmap
 
-- **Week 1** — Extraction + classification as a plain pipeline; Phase-1 R&D bake-off
-  (embeddings vs LLM-only vs hybrid) to pick the ATT&CK-for-ICS mapping method.
-- **Week 2** — Wrap in LangGraph: the extraction agent's review-flagging and the triage
-  agent's *clarification-vs-guess* branch (the core agentic decision), plus an agent
-  trace log.
-- **Week 3** — React frontend (advisory + agent trace side by side), scale evaluation to
+- ~~Extraction + triage: a fully-traceable severity cascade with the
+  clarification-vs-guess branch (the core agentic decision).~~ **Done.**
+- ~~Classification: Phase-1 R&D bake-off to pick the ATT&CK-for-ICS mapping method.~~
+  **Done** (see [`research/`](research/)) — implementation is a parallel branch.
+- **Next** — LangGraph orchestration wrapping extraction → classification → triage,
+  with an agent trace log.
+- **Later** — React frontend (advisory + agent trace side by side), scale evaluation to
   ~25 reports, and the writeup (precision/recall, ranking-agreement, limitations).
 ```
