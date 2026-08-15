@@ -7,12 +7,26 @@ severity-ranked security advisory, automating the tedious, high-volume parts of 
 while keeping the *judgment* (severity scoring especially) as interpretable rules rather
 than a black-box model.
 
-> **Status: the full pipeline is working end to end.** Extraction, classification,
-> triage, and LangGraph orchestration (wrapping all three into one agent graph, with
-> real conditional edges and a trace log) are all implemented — see [Roadmap](#roadmap)
-> for what's next.
+> **Status: the full pipeline is working end to end.** Ingestion, extraction,
+> classification, triage, and LangGraph orchestration (wrapping the middle three into
+> one agent graph, with real conditional edges and a trace log) are all implemented —
+> see [Roadmap](#roadmap) for what's next.
 
 ## What's implemented
+
+`POST /ingest` (text/HTML/URL) and `POST /ingest/pdf` (file upload) turn a report
+source into the plain text the rest of the pipeline expects:
+
+- **HTML** (raw markup or fetched by URL) goes through `trafilatura`'s main-content
+  extraction — strips nav/ads/boilerplate without needing per-site tuning, since a real
+  CISA advisory page and a Dragos blog post don't share a layout.
+- **PDF** (file upload or fetched by URL) goes through `pypdf`.
+- **URL fetch** sniffs `Content-Type` and dispatches to whichever extractor applies;
+  verified this session against a real, uncurated, just-published CISA advisory (not a
+  fixture) — boilerplate stripped cleanly, and the resulting text fed straight into
+  `/advisory` end-to-end with no manual cleanup.
+- Same quality-gate pattern as extraction: too little text after extraction →
+  `flag_for_review` rather than silently handing the rest of the pipeline junk.
 
 `POST /extract` takes raw report text and returns:
 
@@ -129,6 +143,33 @@ uvicorn app.main:app --reload
 Interactive API docs: <http://localhost:8000/docs>
 
 ## Using the endpoints
+
+```bash
+# curl — /ingest, fetch a real CISA advisory by URL
+curl -X POST http://localhost:8000/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"source_type":"url","url":"https://www.cisa.gov/news-events/ics-advisories/icsa-26-204-01"}'
+```
+
+```bash
+# curl — /ingest/pdf, upload a PDF report
+curl -X POST http://localhost:8000/ingest/pdf -F "file=@path/to/advisory.pdf"
+```
+
+Abridged response (either route):
+
+```json
+{
+  "text": "Johnson Controls C-CURE 9000 and Victor application server (Update A)\nSummary\n...",
+  "title": "Johnson Controls C-CURE 9000 and Victor application server (Update A) | CISA",
+  "source_type": "url",
+  "quality": { "recommendation": "proceed", "reason": "Extracted 11865 chars of usable text." }
+}
+```
+
+Feed the returned `text` straight into `/extract`, `/classify`, `/triage`, or
+`/advisory` — ingestion's job ends at clean plain text, it doesn't call the rest of the
+pipeline itself.
 
 ```powershell
 # PowerShell — run the bundled synthetic advisory through /extract
@@ -313,15 +354,15 @@ pass before merging.
 
 ```
 app/
-  main.py            FastAPI app (/health, /extract, /classify, /triage, /advisory)
+  main.py            FastAPI app (/health, /ingest, /extract, /classify, /triage, /advisory)
   config.py          settings (pydantic-settings)
   api/routes/        HTTP routes
   schemas/           Pydantic models (incl. the provenance model)
+  ingestion/         html_extract.py · pdf_extract.py · url_fetch.py · service.py  <- implemented
   extraction/        ioc.py · ner.py · provenance.py · service.py   <- implemented
   classification/    corpus.py · retrieval.py · reranking.py · service.py   <- implemented
   triage/            signals.py · kev.py · cascade.py · service.py  <- implemented
   orchestration/     state.py · nodes.py · graph.py · report.py     <- implemented
-  ingestion/         placeholder (later: PDF/HTML -> text)
 data/
   gazetteers/        curated threat-actor / ICS-vendor / sector lists
   classification/    committed ATT&CK-for-ICS technique corpus (79 techniques)
@@ -385,6 +426,16 @@ Documented honestly rather than hidden — an expanded version will ship with th
   `/advisory`'s classification step.** The standalone `/classify` endpoint sidesteps
   this by taking caller-supplied behaviours directly, but the orchestrated pipeline has
   no such escape hatch — it always auto-chunks.
+- **PDF extraction is text-order, not layout-aware.** Table-heavy sections (e.g. an
+  affected-versions table) may not extract in a sensible reading order. Pasting text
+  directly remains available as a fallback when this matters.
+- **URL fetch has no SSRF allowlist.** `/ingest` will fetch whatever URL it's given,
+  server-side. Acceptable for a local, single-user portfolio tool; would need an
+  allowlist/egress policy before this ran as a shared or public service.
+- **Ingestion isn't wired into the LangGraph graph as its own node.** `/advisory` still
+  takes plain text; turning a URL/PDF into an advisory in one call means calling
+  `/ingest` first and passing its `text` to `/advisory` — a deliberate choice to keep
+  the already-tested graph untouched, not an oversight.
 
 ## Roadmap
 
@@ -396,5 +447,8 @@ Documented honestly rather than hidden — an expanded version will ship with th
 - ~~LangGraph orchestration wrapping extraction → classification → triage, with the
   extraction and triage decisions as real conditional edges, plus an agent trace
   log.~~ **Done.**
-- **Next** — React frontend (advisory + agent trace side by side), scale evaluation to
-  ~25 reports, and the writeup (precision/recall, ranking-agreement, limitations).
+- ~~Ingestion: PDF/HTML/URL → plain text.~~ **Done.**
+- **Next** — a two-page React web app: a showcase page (purpose, workflow, tech stack,
+  architecture diagram) and an interactive demo page against the real backend.
+- **Later** — scale evaluation to ~25 reports, and the writeup (precision/recall,
+  ranking-agreement, limitations).
