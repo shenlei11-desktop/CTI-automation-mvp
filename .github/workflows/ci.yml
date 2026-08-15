@@ -26,6 +26,19 @@ jobs:
       - name: Download spaCy model
         run: python -m spacy download en_core_web_sm
 
+      # fastembed's default cache dir (unset cache_dir -> tempfile.gettempdir()); cached
+      # across runs so classification tests don't re-download ONNX weights every push.
+      - name: Cache fastembed models
+        uses: actions/cache@v4
+        with:
+          path: /tmp/fastembed_cache
+          key: fastembed-bge-base-msmarco-v1
+
+      - name: Warm fastembed models
+        run: |
+          python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-base-en-v1.5')"
+          python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder(model_name='Xenova/ms-marco-MiniLM-L-6-v2')"
+
       - name: Lint (ruff)
         run: ruff check .
 

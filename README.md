@@ -7,11 +7,10 @@ severity-ranked security advisory, automating the tedious, high-volume parts of 
 while keeping the *judgment* (severity scoring especially) as interpretable rules rather
 than a black-box model.
 
-> **Status: Day 1 — extraction only.** This slice stands up the repo, local infra, and a
-> single working `POST /extract` endpoint. Classification, triage, and LangGraph
-> orchestration are intentionally not built yet (see [Roadmap](#roadmap)).
+> **Status: extraction + classification working.** Triage and LangGraph orchestration
+> are next (see [Roadmap](#roadmap)).
 
-## What Day 1 does
+## What's implemented
 
 `POST /extract` takes raw report text and returns:
 
@@ -23,7 +22,21 @@ than a black-box model.
 - **Provenance** — every extracted fact carries the **source sentence** and character
   offsets it came from.
 - **Quality summary** — a lightweight signal (`proceed` / `flag_for_review`) that the
-  Week-2 extraction agent will later branch on.
+  extraction agent will later branch on in orchestration.
+
+`POST /classify` takes attacker-behaviour text and returns ranked **MITRE ATT&CK-for-ICS**
+technique matches:
+
+- **Method D** (chosen after a [Phase-1 R&D bake-off](research/README.md) comparing
+  embeddings, LLM-only, hybrid, and retrieve+rerank): embedding retrieval
+  (`bge-base-en-v1.5`) narrows the 79-technique catalogue to a shortlist, then a
+  cross-encoder (`ms-marco-MiniLM-L-6-v2`) reranks it — fully local, deterministic, no
+  LLM in the loop, and architecturally incapable of hallucinating a technique ID.
+- **Confidence gate**: the top1-vs-top2 score margin is checked against a threshold
+  *derived empirically* from 259 real labeled examples (Youden's-J analysis — see
+  [`research/classification_confidence_calibration.ipynb`](research/classification_confidence_calibration.ipynb)),
+  not guessed. Below the margin → `flag_for_review` rather than a confident-looking
+  wrong answer.
 
 ## Design decisions worth noting
 
@@ -75,7 +88,7 @@ uvicorn app.main:app --reload
 
 Interactive API docs: <http://localhost:8000/docs>
 
-## Using the endpoint
+## Using the endpoints
 
 ```powershell
 # PowerShell — run the bundled synthetic advisory through /extract
@@ -122,6 +135,39 @@ Abridged response shape:
 }
 ```
 
+```bash
+# curl — /classify
+curl -X POST http://localhost:8000/classify \
+  -H 'Content-Type: application/json' \
+  -d '{"behaviors":[{"text":"The threat actor identified a PLC whose web-based management interface was directly reachable from the public internet and exploited an authentication bypass to gain access without valid credentials."}],"top_k":3}'
+```
+
+Abridged response:
+
+```json
+{
+  "behaviors": [
+    {
+      "text": "The threat actor identified a PLC...",
+      "matches": [
+        { "technique_id": "T0883", "technique_name": "Internet Accessible Device",
+          "tactics": ["initial-access"], "retrieval_score": 0.634, "rerank_score": -1.768 },
+        { "technique_id": "T0819", "technique_name": "Exploit Public-Facing Application",
+          "tactics": ["initial-access"], "retrieval_score": 0.597, "rerank_score": -3.784 }
+      ],
+      "quality": {
+        "top1_score": -1.77, "top1_margin": 2.02,
+        "recommendation": "proceed",
+        "reason": "Top match scored -1.77, 2.02 clear of the runner-up."
+      }
+    }
+  ]
+}
+```
+
+`rerank_score` is a raw, unbounded cross-encoder logit — not a probability. `top1_margin`
+(the gap to the runner-up) is what the confidence gate actually thresholds on.
+
 ## Testing
 
 ```bash
@@ -147,18 +193,20 @@ pass before merging.
 
 ```
 app/
-  main.py            FastAPI app (/health, /extract)
+  main.py            FastAPI app (/health, /extract, /classify)
   config.py          settings (pydantic-settings)
   api/routes/        HTTP routes
   schemas/           Pydantic models (incl. the provenance model)
   extraction/        ioc.py · ner.py · provenance.py · service.py   <- implemented
+  classification/    corpus.py · retrieval.py · reranking.py · service.py   <- implemented
   ingestion/         placeholder (later: PDF/HTML -> text)
-  classification/    placeholder (Week 1: ATT&CK-for-ICS mapping)
-  triage/            placeholder (Week 2: severity cascade + clarification branch)
-  orchestration/     placeholder (Week 2: LangGraph agent graph + trace)
+  triage/            placeholder (next: severity cascade + clarification branch)
+  orchestration/     placeholder (next: LangGraph agent graph + trace)
 data/
   gazetteers/        curated threat-actor / ICS-vendor / sector lists
+  classification/    committed ATT&CK-for-ICS technique corpus (79 techniques)
   samples/           sample report text (synthetic seed + your real reports)
+research/            Phase-1 R&D: classification method bake-off + confidence calibration
 tests/               pytest unit + endpoint tests
 ```
 
@@ -176,15 +224,30 @@ Documented honestly rather than hidden — an expanded version will ship with th
 - **Sentence segmentation is rule-based** (spaCy `sentencizer`), so provenance can be off
   on unusual formatting (tables, bullet fragments).
 - **The quality summary is a metric, not yet a decision.** The `proceed` /
-  `flag_for_review` branch becomes real agent behaviour in Week 2.
+  `flag_for_review` branch becomes real agent behaviour once orchestration exists.
+- **Classification's confidence threshold isn't rigorously cross-validated.** It's
+  *derived*, not guessed — a Youden's-J search over 259 real labeled examples — but
+  that's still not enough data over 79 classes with a general-purpose reranker to trust
+  as a calibrated boundary. Read it as "catches many wrong answers, avoids flagging most
+  right ones," not a probability cutoff. See the calibration notebook for the honest
+  numbers.
+- **No ICS-domain embedding/reranker model exists** via the local `fastembed` library —
+  `bge`/`ms-marco` are general-purpose web-search models. This is a real ceiling on
+  classification accuracy, not a bug.
+- **Automatic whole-report chunking for classification (`classify_text`, used by the
+  orchestration agent) is an unvalidated heuristic** — sentence-splitting was never
+  exercised by the bake-off, which worked on pre-curated behaviour snippets. The
+  standalone `/classify` endpoint avoids this by requiring the caller to supply
+  behaviours explicitly.
 
 ## Roadmap
 
-- **Week 1** — Extraction + classification as a plain pipeline; Phase-1 R&D bake-off
-  (embeddings vs LLM-only vs hybrid) to pick the ATT&CK-for-ICS mapping method.
-- **Week 2** — Wrap in LangGraph: the extraction agent's review-flagging and the triage
-  agent's *clarification-vs-guess* branch (the core agentic decision), plus an agent
-  trace log.
-- **Week 3** — React frontend (advisory + agent trace side by side), scale evaluation to
+- ~~Extraction + classification as a plain pipeline; Phase-1 R&D bake-off to pick the
+  ATT&CK-for-ICS mapping method.~~ **Done.**
+- **Next** — Triage: a hand-designed, fully-traceable severity cascade (CVSS band ×
+  exposure × asset-criticality × CISA KEV), with the *clarification-vs-guess* branch —
+  the core agentic decision — as a real conditional edge. Then LangGraph orchestration
+  wrapping extraction → classification → triage, with an agent trace log.
+- **Later** — React frontend (advisory + agent trace side by side), scale evaluation to
   ~25 reports, and the writeup (precision/recall, ranking-agreement, limitations).
 ```
