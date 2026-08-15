@@ -76,6 +76,41 @@ class BehaviorClassification(BaseModel):
     quality: ClassificationQuality
 
 
+class BehaviorEvidence(BaseModel):
+    """One behaviour that supports a :class:`TechniqueRollup`."""
+
+    text: str
+    source: SourceSpan | None = None
+
+
+class TechniqueRollup(BaseModel):
+    """One ATT&CK-for-ICS technique observed anywhere in the report, deduped across
+    every behaviour whose own top-1 match is this technique (e.g. two different
+    sentences both pointing at the same technique collapse into one entry here, each
+    kept as ``evidence`` rather than shown as separate, seemingly-independent hits).
+    """
+
+    technique_id: str
+    technique_name: str
+    tactics: list[str]
+    attack_url: str = Field(..., description="Canonical MITRE ATT&CK technique page.")
+    best_rerank_score: float = Field(
+        ..., description="Highest rerank_score among this technique's evidence."
+    )
+    best_margin: float | None = Field(
+        None, description="top1_margin of the behaviour that produced best_rerank_score."
+    )
+    recommendation: Recommendation = Field(
+        ..., description="Recommendation of the behaviour that produced best_rerank_score."
+    )
+    evidence: list[BehaviorEvidence]
+
+
 class ClassifyResponse(BaseModel):
     report_id: str | None = None
     behaviors: list[BehaviorClassification]
+    techniques: list[TechniqueRollup] = Field(
+        default_factory=list,
+        description="Report-level rollup: each technique observed, deduped, with its "
+        "supporting evidence sentence(s). Derived from behaviors, not a separate call.",
+    )

@@ -30,13 +30,11 @@ def render(state: AdvisoryState) -> str:
     if state.classification is not None:
         lines.append("")
         lines.append("ATT&CK-for-ICS techniques observed:")
-        for behavior in state.classification.behaviors:
-            if not behavior.matches:
-                continue
-            top = behavior.matches[0]
+        for technique in state.classification.techniques:
             lines.append(
-                f"  - {top.technique_id} {top.technique_name} "
-                f"(rerank score {top.rerank_score:.2f}, {behavior.quality.recommendation})"
+                f"  - {technique.technique_id} {technique.technique_name} "
+                f"(rerank score {technique.best_rerank_score:.2f}, {technique.recommendation}, "
+                f"{len(technique.evidence)} supporting sentence(s))"
             )
 
     if state.triage is not None:

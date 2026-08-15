@@ -21,15 +21,16 @@ calibrated probability boundary.
 
 from __future__ import annotations
 
-from app.classification import reranking, retrieval
+from app.classification import reranking, retrieval, segmentation
 from app.classification.corpus import get_technique_by_id
-from app.extraction import provenance as prov
 from app.schemas.classification import (
     BehaviorClassification,
+    BehaviorEvidence,
     BehaviorInput,
     ClassificationQuality,
     ClassifyResponse,
     TechniqueMatch,
+    TechniqueRollup,
 )
 from app.schemas.extraction import SourceSpan
 
@@ -38,6 +39,8 @@ from app.schemas.extraction import SourceSpan
 # predictions (FPR 27% vs 36% at the peak) while still catching most wrong ones
 # (TPR 67% vs 76%). See the calibration notebook for the full derivation.
 _MIN_TOP1_MARGIN = 1.25
+
+_ATTACK_URL_TEMPLATE = "https://attack.mitre.org/techniques/{technique_id}"
 
 # Internal chunking knobs for classify_text() (orchestration's entry point only).
 # This heuristic was never validated by the bake-off, which worked on pre-curated
@@ -102,31 +105,69 @@ def _classify_one(behavior: BehaviorInput, top_k: int) -> BehaviorClassification
     )
 
 
+def _build_rollup(results: list[BehaviorClassification]) -> list[TechniqueRollup]:
+    """Aggregate each behaviour's OWN top-1 match into one entry per technique --
+    dedups repeats (two different sentences both landing on the same technique) and
+    keeps every supporting behaviour as evidence rather than as separate, seemingly
+    independent hits.
+    """
+    best: dict[str, tuple[BehaviorClassification, TechniqueMatch]] = {}
+    evidence: dict[str, list[BehaviorEvidence]] = {}
+
+    for behavior in results:
+        if not behavior.matches:
+            continue
+        top = behavior.matches[0]
+        evidence.setdefault(top.technique_id, []).append(
+            BehaviorEvidence(text=behavior.text, source=behavior.source)
+        )
+        current_best = best.get(top.technique_id)
+        if current_best is None or top.rerank_score > current_best[1].rerank_score:
+            best[top.technique_id] = (behavior, top)
+
+    rollups = [
+        TechniqueRollup(
+            technique_id=technique_id,
+            technique_name=match.technique_name,
+            tactics=match.tactics,
+            attack_url=_ATTACK_URL_TEMPLATE.format(technique_id=technique_id),
+            best_rerank_score=match.rerank_score,
+            best_margin=behavior.quality.top1_margin,
+            recommendation=behavior.quality.recommendation,
+            evidence=evidence[technique_id],
+        )
+        for technique_id, (behavior, match) in best.items()
+    ]
+    rollups.sort(key=lambda r: r.best_rerank_score, reverse=True)
+    return rollups
+
+
 def classify(
     behaviors: list[BehaviorInput], report_id: str | None = None, top_k: int = 5
 ) -> ClassifyResponse:
     """Classify each supplied behaviour independently. The explicit public contract:
     the caller decides what counts as a behaviour to classify."""
     results = [_classify_one(b, top_k) for b in behaviors]
-    return ClassifyResponse(report_id=report_id, behaviors=results)
+    return ClassifyResponse(
+        report_id=report_id, behaviors=results, techniques=_build_rollup(results)
+    )
 
 
 def classify_text(text: str, report_id: str | None = None, top_k: int = 5) -> ClassifyResponse:
     """Internal convenience wrapper for orchestration only -- NOT exposed via HTTP.
 
-    Segments ``text`` into sentence-level behaviours: drops short sentences (below
-    ``_MIN_BEHAVIOR_SENTENCE_LENGTH``) and all-caps section headers (e.g. "SUMMARY",
-    "MITIGATIONS" in the bundled sample advisory), and caps the count at
-    ``_MAX_BEHAVIORS_PER_REPORT`` to bound latency. The caller of ``classify()`` should
-    prefer supplying curated behaviours directly when possible.
+    Segments ``text`` into sentence-level behaviours via ``segmentation.segment()``
+    (headers, non-behaviour sections, and negated "not affected" claims already
+    filtered out there), drops anything still under ``_MIN_BEHAVIOR_SENTENCE_LENGTH``,
+    and caps the count at ``_MAX_BEHAVIORS_PER_REPORT`` to bound latency. The caller of
+    ``classify()`` should prefer supplying curated behaviours directly when possible.
     """
-    sentences = prov.build_sentence_index(text)
     behaviors = [
         BehaviorInput(
-            text=s.text, source=SourceSpan(sentence=s.text, start=s.start, end=s.end)
+            text=seg.text, source=SourceSpan(sentence=seg.text, start=seg.start, end=seg.end)
         )
-        for s in sentences
-        if len(s.text) >= _MIN_BEHAVIOR_SENTENCE_LENGTH and not s.text.isupper()
+        for seg in segmentation.segment(text)
+        if len(seg.text.strip()) >= _MIN_BEHAVIOR_SENTENCE_LENGTH
     ][:_MAX_BEHAVIORS_PER_REPORT]
 
     if not behaviors:
