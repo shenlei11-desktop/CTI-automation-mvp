@@ -38,6 +38,9 @@ from app.schemas.extraction import SourceSpan
 # chosen slightly below the exact optimum to reduce needlessly flagging correct
 # predictions (FPR 27% vs 36% at the peak) while still catching most wrong ones
 # (TPR 67% vs 76%). See the calibration notebook for the full derivation.
+# CAVEAT: calibrated when retrieval.HYBRID_RETRIEVAL_N was 30. That constant was later
+# raised to 50 (see retrieval.py) after a separate accuracy sweep; this margin has not
+# been re-derived against the wider candidate pool. Flagged, not fixed, this session.
 _MIN_TOP1_MARGIN = 1.25
 
 _ATTACK_URL_TEMPLATE = "https://attack.mitre.org/techniques/{technique_id}"

@@ -43,6 +43,10 @@ source into the plain text the rest of the pipeline expects:
 - Same quality-gate pattern as extraction: too little text after extraction →
   `flag_for_review` rather than silently handing the rest of the pipeline junk.
 
+`GET /ingest/feed` lists real, current CISA ICS advisories — pulled live from
+`cisa.gov`'s public RSS feed (no API key, no scraping), for a one-click "run a genuinely
+live report" demo instead of only pre-supplied text.
+
 `POST /extract` takes raw report text and returns:
 
 - **IOCs** — IPv4 addresses, domains, MD5/SHA1/SHA256 hashes, and CVEs, extracted with
@@ -68,6 +72,15 @@ technique matches:
   [`research/classification_confidence_calibration.ipynb`](research/classification_confidence_calibration.ipynb)),
   not guessed. Below the margin → `flag_for_review` rather than a confident-looking
   wrong answer.
+- **Report-level rollup**: `/advisory`'s automatic whole-report classification
+  (`classify_text`) now segments on blank lines *before* sentence-splitting — fixing a
+  real bug where a section header on its own line (e.g. "MITIGATIONS") got glued to the
+  sentence after it by spaCy's sentencizer, so mitigation advice, an affected-products
+  list, and even a "not confirmed vulnerable" negation were being handed to the
+  classifier as if they were attacker behaviour. Non-behaviour sections are now dropped
+  entirely, negated claims are dropped, and every technique observed across the report
+  is deduped into one entry (`techniques`) with its supporting sentence(s) kept as
+  evidence, its MITRE ATT&CK URL, and its mitigation text.
 
 `POST /triage` takes raw report text and returns a **fully-traceable severity
 assessment** per CVE:
@@ -274,12 +287,24 @@ Abridged response:
         "reason": "Top match scored -1.77, 2.02 clear of the runner-up."
       }
     }
+  ],
+  "techniques": [
+    {
+      "technique_id": "T0883", "technique_name": "Internet Accessible Device",
+      "tactics": ["initial-access"],
+      "attack_url": "https://attack.mitre.org/techniques/T0883",
+      "mitigation": "Limit network exposure for all control system devices...",
+      "best_rerank_score": -1.77, "best_margin": 2.02, "recommendation": "proceed",
+      "evidence": [{ "text": "The threat actor identified a PLC...", "source": null }]
+    }
   ]
 }
 ```
 
 `rerank_score` is a raw, unbounded cross-encoder logit — not a probability. `top1_margin`
 (the gap to the runner-up) is what the confidence gate actually thresholds on.
+`techniques` is the report-level view: each technique deduped across every behaviour
+whose own top match it was, with its supporting sentence(s) as `evidence`.
 
 ```powershell
 # PowerShell — /triage, run the bundled sample advisory
@@ -401,9 +426,9 @@ app/
   config.py          settings (pydantic-settings)
   api/routes/        HTTP routes
   schemas/           Pydantic models (incl. the provenance model)
-  ingestion/         html_extract.py · pdf_extract.py · url_fetch.py · service.py  <- implemented
+  ingestion/         html_extract.py · pdf_extract.py · url_fetch.py · feed.py · service.py  <- implemented
   extraction/        ioc.py · ner.py · provenance.py · service.py   <- implemented
-  classification/    corpus.py · retrieval.py · reranking.py · service.py   <- implemented
+  classification/    corpus.py · retrieval.py · reranking.py · segmentation.py · service.py  <- implemented
   triage/            signals.py · kev.py · cascade.py · service.py  <- implemented
   orchestration/     state.py · nodes.py · graph.py · report.py     <- implemented
 data/
@@ -434,20 +459,51 @@ Documented honestly rather than hidden — an expanded version will ship with th
   are only caught by generic spaCy NER (as `organization`), if at all.
 - **Sentence segmentation is rule-based** (spaCy `sentencizer`), so provenance can be off
   on unusual formatting (tables, bullet fragments).
-- **Classification's confidence threshold isn't rigorously cross-validated.** It's
-  *derived*, not guessed — a Youden's-J search over 259 real labeled examples — but
-  that's still not enough data over 79 classes with a general-purpose reranker to trust
-  as a calibrated boundary. Read it as "catches many wrong answers, avoids flagging most
-  right ones," not a probability cutoff. See the calibration notebook for the honest
-  numbers.
+- **Classification's confidence threshold isn't rigorously cross-validated, and is now
+  slightly stale.** It's *derived*, not guessed — a Youden's-J search over 259 real
+  labeled examples — but that's still not enough data over 79 classes with a
+  general-purpose reranker to trust as a calibrated boundary; read it as "catches many
+  wrong answers, avoids flagging most right ones," not a probability cutoff. It was
+  also calibrated when retrieval considered the top 30 candidates; that was since
+  raised to 50 (next bullet) and the threshold hasn't been re-derived against the wider
+  pool — a known, flagged follow-up, not done this session. See the calibration
+  notebook for the honest numbers.
 - **No ICS-domain embedding/reranker model exists** via the local `fastembed` library —
   `bge`/`ms-marco` are general-purpose web-search models. This is a real ceiling on
-  classification accuracy, not a bug.
+  classification accuracy, not a bug. Two rounds of accuracy experiments, run with real
+  measurements rather than assumed:
+  - *Model swaps are a closed question* (`research/classification_improvements.ipynb`):
+    `bge-reranker-base` gained +0.011 MRR over `ms-marco-MiniLM-L-6-v2` for ~10x the
+    latency (807s vs 82s); `bge-large` embeddings scored *worse* than `bge-base`.
+  - *Retrieval N was genuinely under-tuned and got fixed*
+    (`research/classification_accuracy_v2.ipynb`): the bake-off only tuned the
+    candidate pool size for the hybrid-LLM method, never for the retrieve+rerank method
+    actually in production. A sweep on the bake-off's own 80-example sample showed a
+    real, monotonic gain from a wider pool (MRR 0.533→0.559, R@3 0.606→0.619 going
+    from N=30 to N=50), so `HYBRID_RETRIEVAL_N` was raised to 50.
+  - *Appending MITRE's mitigation text to the reranker's candidate text was tested and
+    rejected*: MRR dropped from 0.533 to 0.506 — a real, measured regression, not just
+    a theoretical concern, confirming that mitigation text (which describes the fix,
+    not the attack) is a worse semantic match than description text alone. Mitigation
+    text is exposed for display only (`TechniqueRollup.mitigation`), never fed into
+    matching.
+  - *Detection guidance doesn't exist in a usable form for ICS ATT&CK*: its current
+    STIX data model has no `x_mitre_detection` field on technique objects at all (0/97
+    populated, verified against a live fetch) — it lives three relationship-hops away
+    and reads as defender monitoring language, not attacker behaviour, so it wasn't
+    worth extracting.
 - **Automatic whole-report chunking for classification (`classify_text`, used by the
-  orchestration agent) is an unvalidated heuristic** — sentence-splitting was never
-  exercised by the bake-off, which worked on pre-curated behaviour snippets. The
-  standalone `/classify` endpoint avoids this by requiring the caller to supply
-  behaviours explicitly.
+  orchestration agent) is a rule-based heuristic, not a validated one** — sentence
+  segmentation itself was never exercised by the bake-off, which worked on pre-curated
+  behaviour snippets. It's meaningfully better than the original naive version (which
+  had a real bug: section headers glued onto the next sentence, so mitigation advice
+  and negated claims were classified as attacker behaviour — fixed this session, see
+  `app/classification/segmentation.py`), and it's *tuned specifically on CISA-advisory
+  structure* (ALL-CAPS section headers, a title block, `MITIGATIONS`/`AFFECTED
+  PRODUCTS`-style section names) — a genuinely new assumption that may not hold for a
+  vendor bulletin or a blog-format report with different conventions. The standalone
+  `/classify` endpoint avoids all of this by requiring the caller to supply behaviours
+  explicitly.
 - **Exposure/asset-tier detection is plain keyword matching**, not NLP — it can't
   distinguish a current-state claim from a recommendation (e.g. "the interface is
   internet-facing... operators should segment the network" resolves to `unknown`,
