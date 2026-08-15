@@ -1,4 +1,4 @@
-import type { AdvisoryResponse, IngestResponse } from "./types"
+import type { AdvisoryResponse, FeedResponse, IngestResponse } from "./types"
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
 
@@ -55,4 +55,9 @@ export async function ingestPdf(file: File): Promise<IngestResponse> {
 
 export function getAdvisory(text: string, reportId?: string): Promise<AdvisoryResponse> {
   return postJson("/advisory", { text, report_id: reportId ?? null })
+}
+
+export async function getAdvisoryFeed(limit = 6): Promise<FeedResponse> {
+  const res = await fetch(`${API_BASE}/ingest/feed?limit=${limit}`)
+  return handle<FeedResponse>(res)
 }

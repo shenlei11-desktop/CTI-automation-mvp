@@ -25,6 +25,16 @@ export interface IngestResponse {
   quality: IngestQuality
 }
 
+export interface FeedItem {
+  title: string
+  url: string
+  published: string | null
+}
+
+export interface FeedResponse {
+  items: FeedItem[]
+}
+
 // -- extraction (app/schemas/extraction.py) ----------------------------------
 
 export type IOCType = "ipv4" | "domain" | "md5" | "sha1" | "sha256" | "cve"
@@ -91,9 +101,27 @@ export interface BehaviorClassification {
   quality: ClassificationQuality
 }
 
+export interface BehaviorEvidence {
+  text: string
+  source: SourceSpan | null
+}
+
+export interface TechniqueRollup {
+  technique_id: string
+  technique_name: string
+  tactics: string[]
+  attack_url: string
+  mitigation: string
+  best_rerank_score: number
+  best_margin: number | null
+  recommendation: Recommendation
+  evidence: BehaviorEvidence[]
+}
+
 export interface ClassifyResponse {
   report_id: string | null
   behaviors: BehaviorClassification[]
+  techniques: TechniqueRollup[]
 }
 
 // -- triage (app/schemas/triage.py) ------------------------------------------

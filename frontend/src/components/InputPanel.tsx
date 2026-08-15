@@ -32,16 +32,16 @@ export default function InputPanel({ onSubmit, disabled }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 font-mono text-xs uppercase">
         {MODES.map((m) => (
           <button
             key={m.id}
             type="button"
             onClick={() => setMode(m.id)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`px-3 py-1.5 transition-colors ${
               mode === m.id
-                ? "bg-teal-500/15 text-teal-300"
-                : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                ? "bg-amber-500/10 text-amber-400"
+                : "bg-stone-900 text-stone-500 hover:text-stone-300"
             }`}
           >
             {m.label}
@@ -55,14 +55,14 @@ export default function InputPanel({ onSubmit, disabled }: Props) {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://www.cisa.gov/news-events/ics-advisories/icsa-..."
-          className="w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:border-teal-500/50 focus:outline-none"
+          className="w-full border border-stone-800 bg-stone-900 px-3 py-2 font-mono text-sm text-stone-200 placeholder-stone-600 focus:border-amber-500/50 focus:outline-none"
         />
       ) : mode === "pdf" ? (
         <input
           type="file"
           accept="application/pdf"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-400 file:mr-3 file:rounded file:border-0 file:bg-teal-500/15 file:px-3 file:py-1 file:text-teal-300"
+          className="w-full border border-stone-800 bg-stone-900 px-3 py-2 text-sm text-stone-400 file:mr-3 file:border-0 file:bg-amber-500/10 file:px-3 file:py-1 file:text-amber-400"
         />
       ) : (
         <textarea
@@ -70,16 +70,16 @@ export default function InputPanel({ onSubmit, disabled }: Props) {
           onChange={(e) => setText(e.target.value)}
           rows={8}
           placeholder={mode === "html" ? "Paste raw HTML..." : "Paste report text..."}
-          className="w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-200 placeholder-slate-600 focus:border-teal-500/50 focus:outline-none"
+          className="w-full border border-stone-800 bg-stone-900 px-3 py-2 font-mono text-sm text-stone-200 placeholder-stone-600 focus:border-amber-500/50 focus:outline-none"
         />
       )}
 
       <button
         type="submit"
         disabled={disabled || !canSubmit}
-        className="rounded-lg bg-teal-500 px-5 py-2 font-semibold text-slate-950 transition-colors hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-40"
+        className="border border-amber-500 px-5 py-2 font-mono text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500 hover:text-stone-950 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {disabled ? "Running…" : "Run pipeline"}
+        {disabled ? "running…" : "run pipeline →"}
       </button>
     </form>
   )

@@ -14,7 +14,7 @@ export default function App() {
             <Route path="/demo" element={<DemoPage />} />
           </Routes>
         </main>
-        <footer className="border-t border-slate-800/80 px-6 py-6 text-center text-xs text-slate-600">
+        <footer className="border-t border-stone-800 bg-stone-950 px-6 py-6 text-center text-xs text-stone-600">
           Built for a DigiSpec application portfolio. All sample data is synthetic
           unless fetched live from a real source you provide.
         </footer>

@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@theme {
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -10,16 +15,31 @@ body,
   height: 100%;
 }
 
+/* The app shell (NavBar + footer) stays a consistent dark frame regardless of which
+   page is showing -- the Overview page's light "document" panel and the Demo page's
+   dark "console" panel are each their own self-contained section within it. */
 body {
-  @apply bg-slate-950 text-slate-200 antialiased;
-  font-feature-settings: "ss01";
+  @apply bg-stone-950 text-stone-200 antialiased;
 }
 
 code,
 pre {
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 ::selection {
-  @apply bg-teal-500/30 text-white;
+  @apply bg-amber-500/30 text-white;
+}
+
+/* -- Document theme (Overview page): light, serif, restrained ink-red accent -- */
+.theme-document {
+  @apply bg-stone-50 text-stone-800;
+}
+.theme-document ::selection {
+  @apply bg-red-800/20 text-stone-950;
+}
+
+/* -- Console theme (Demo page): dark, monospace-forward, amber accent -- */
+.theme-console {
+  @apply bg-stone-950 text-stone-200;
 }

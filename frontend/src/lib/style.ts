@@ -1,31 +1,42 @@
 import type { AdvisoryStatus, Recommendation, SeverityBand } from "../api/types"
 
-export function severityClasses(band: SeverityBand): string {
+export function severityTextClasses(band: SeverityBand): string {
   switch (band) {
     case "Critical":
-      return "bg-red-500/15 text-red-300 border-red-500/40"
+      return "text-red-400"
     case "High":
-      return "bg-orange-500/15 text-orange-300 border-orange-500/40"
+      return "text-orange-400"
     case "Medium":
-      return "bg-amber-500/15 text-amber-300 border-amber-500/40"
+      return "text-amber-400"
     case "Low":
-      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+      return "text-emerald-400"
   }
 }
 
-export function statusClasses(status: AdvisoryStatus): string {
+export function severityBorderClasses(band: SeverityBand): string {
+  switch (band) {
+    case "Critical":
+      return "border-red-500/50"
+    case "High":
+      return "border-orange-500/50"
+    case "Medium":
+      return "border-amber-500/50"
+    case "Low":
+      return "border-emerald-500/50"
+  }
+}
+
+export function statusTextClasses(status: AdvisoryStatus): string {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+      return "text-emerald-400"
     case "needs_extraction_review":
-      return "bg-red-500/15 text-red-300 border-red-500/40"
+      return "text-red-400"
     case "needs_clarification":
-      return "bg-amber-500/15 text-amber-300 border-amber-500/40"
+      return "text-amber-400"
   }
 }
 
-export function recommendationClasses(recommendation: Recommendation): string {
-  return recommendation === "proceed"
-    ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
-    : "bg-amber-500/15 text-amber-300 border-amber-500/40"
+export function recommendationTextClasses(recommendation: Recommendation): string {
+  return recommendation === "proceed" ? "text-emerald-400" : "text-amber-400"
 }

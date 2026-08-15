@@ -15,17 +15,34 @@ than a black-box model.
 ## The web app
 
 A two-page React + TypeScript + Tailwind app in [`frontend/`](frontend/), talking
-directly to the FastAPI backend (no separate backend-for-frontend layer):
+directly to the FastAPI backend (no separate backend-for-frontend layer). Deliberately
+two different visual registers rather than one dashboard skin worn twice: the Overview
+page reads as a printed intelligence document (light, serif headings, a restrained
+ink-red accent); the Demo page reads as an operational console (dark, monospace-led,
+amber accent). Every diagram is hand-authored SVG — no diagramming library, no
+mermaid — so the two agentic decision branches can be drawn as real forks with real
+arrows, not implied by a card with a colored border.
 
-- **Overview** (`/`) — the pitch: what the tool is and why it's built this way, a
-  walkthrough of the five-stage pipeline, the tech stack, and a hand-built diagram
-  that calls out the two agentic decision branches, not just a generic flow chart.
-- **Try It** (`/demo`) — the proof: paste text/HTML, fetch a real report by URL, or
-  upload a PDF and run it through the real backend, live. Three canned examples give
-  a zero-typing tour of both decision branches (`needs_extraction_review`,
-  `needs_clarification`) plus the fully-scored happy path, each hand-verified against
-  the running backend. Results render the full agent trace, extracted IOCs/entities,
-  ATT&CK-for-ICS matches, and per-CVE severity with its complete rule trace.
+- **Overview** (`/`) — the pitch: why the tool is built this way, a real branching
+  diagram of the LangGraph topology (the actual conditional edges, not a linear flow
+  chart), a numbered breakdown of what each of the five agents receives / does / emits
+  / is allowed to decide, a diagram of the classification funnel (79 techniques →
+  embedding retrieval → cross-encoder rerank → margin gate) annotated with the real
+  measured numbers, and the severity cascade drawn as an actual ladder with the KEV
+  floor as an actual floor line.
+- **Try It** (`/demo`) — the proof, and it fetches its own reports: a live panel pulls
+  real, current CISA ICS advisories straight from `GET /ingest/feed` on page load — no
+  typing required to run a genuinely unseen report. Three canned scenarios stay
+  alongside it since only hand-crafted text can *guarantee* hitting all three pipeline
+  outcomes on demand. The same agent-graph diagram from the Overview page reappears
+  here **live**: nodes and the taken edge light up as a real run completes, so the
+  hard-stop and the clarification branch are something you watch happen, not just read
+  about. Classification results render the report-level technique rollup — deduped,
+  linked to the real MITRE ATT&CK page, each with its supporting sentence(s) quoted
+  verbatim and a visual margin bar against the confidence threshold, instead of a bare
+  score. Extraction and triage surface data the previous version silently discarded:
+  signal density and the extraction quality reason, and triage's exposure/asset-tier
+  context with why it was (or wasn't) readable from the text.
 
 ## What's implemented
 
@@ -546,10 +563,15 @@ Documented honestly rather than hidden — an expanded version will ship with th
   API base URL that isn't a hardcoded `localhost:8000` fallback.
 - **No automated frontend tests.** CI runs `oxlint` + a TypeScript build (`tsc -b`) on
   every push, which catches type errors and lint issues, but there's no component or
-  end-to-end test suite — reasonable for a two-page portfolio app, verified this
-  session by hand (dev server, production preview build, and the full
-  `docker compose up --build` stack, all against the real backend) rather than by
-  Playwright/RTL.
+  regression test suite — reasonable for a two-page portfolio app. Verified by hand
+  each session instead: dev server, production preview build, the full
+  `docker compose up --build` stack, and real Chromium screenshots (via a temporary,
+  not-committed Playwright install) of both themes at desktop and mobile widths and of
+  a live end-to-end run, all against the real backend — genuine visual verification,
+  just not automated regression coverage.
+- **The hand-authored SVG diagrams have a fixed internal coordinate space** that scales
+  down uniformly on narrow screens — structure stays clear (no overflow, nothing cut
+  off) but fine print in labels can get small enough to need pinch-zoom on a phone.
 - **The TS types in `frontend/src/api/types.ts` are hand-kept in sync with the Pydantic
   schemas**, not generated. A backend field rename won't fail loudly on the frontend
   side until something actually breaks at runtime.
@@ -567,5 +589,10 @@ Documented honestly rather than hidden — an expanded version will ship with th
 - ~~Ingestion: PDF/HTML/URL → plain text.~~ **Done.**
 - ~~A two-page React web app: an overview page (purpose, workflow, tech stack,
   architecture diagram) and an interactive demo page against the real backend.~~ **Done.**
+- ~~Classification accuracy investigation (retrieval-N sweep, corpus enrichment) and a
+  behaviour-segmentation bug fix; live CISA advisory autofetch; a diagram-forward
+  visual redesign replacing the generic card-grid look with a real branching agent
+  graph, a classification funnel, and a severity ladder, each hand-authored SVG.~~
+  **Done.**
 - **Next** — scale evaluation to ~25 reports, and the writeup (precision/recall,
   ranking-agreement, limitations).
