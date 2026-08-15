@@ -1,4 +1,4 @@
-# Runtime dependencies (Day 1: extraction only)
+# Runtime dependencies
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 pydantic>=2.7,<3.0
@@ -6,3 +6,17 @@ pydantic-settings>=2.3,<3.0
 spacy>=3.8,<3.9
 # The spaCy English model is installed separately (not on PyPI as a normal dep):
 #   python -m spacy download en_core_web_sm
+
+# Classification: ONNX embeddings + cross-encoder reranking (Method D). Deliberately
+# NOT sentence-transformers — that pulls in PyTorch, whose deeply-nested license files
+# overflow Windows' 260-char path limit under this project's long OneDrive path.
+fastembed>=0.4,<1.0
+# Explicit pin for retrieval.py's cosine-similarity math (already a transitive
+# dependency via spaCy, but not currently declared directly).
+numpy>=1.26,<3.0
+
+# Orchestration: LangGraph agent graph wiring extraction/classification/triage.
+langgraph>=1.0,<2.0
+
+# Triage: live CISA KEV catalog refresh (falls back to a committed snapshot on failure).
+requests>=2.32,<3.0
