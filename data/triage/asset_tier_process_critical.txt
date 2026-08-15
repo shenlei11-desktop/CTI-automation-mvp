@@ -1,0 +1,11 @@
+# Phrases indicating a process-critical asset (case-insensitive substring match).
+# One phrase per line. '#' lines are ignored.
+#
+# Deliberately excludes generic phrases like "process controller" -- those appear as
+# substrings inside safety-critical compound phrases too (e.g. "safety-critical process
+# controllers"), which caused a false both-categories-hit -> unknown resolution on the
+# bundled sample advisory. Kept to phrases distinctive enough not to collide.
+
+process-critical
+process critical
+production controller

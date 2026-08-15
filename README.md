@@ -7,8 +7,9 @@ severity-ranked security advisory, automating the tedious, high-volume parts of 
 while keeping the *judgment* (severity scoring especially) as interpretable rules rather
 than a black-box model.
 
-> **Status: extraction + classification working.** Triage and LangGraph orchestration
-> are next (see [Roadmap](#roadmap)).
+> **Status: extraction + classification + triage all working.** LangGraph orchestration
+> (wrapping the three into one agent graph, with a trace log) is next — see
+> [Roadmap](#roadmap).
 
 ## What's implemented
 
@@ -38,6 +39,25 @@ technique matches:
   not guessed. Below the margin → `flag_for_review` rather than a confident-looking
   wrong answer.
 
+`POST /triage` takes raw report text and returns a **fully-traceable severity
+assessment** per CVE:
+
+- **The severity cascade**: base band from the official FIRST.org CVSS v3.x scale,
+  then exposure (internet-facing / segmented) and asset-criticality tier
+  (safety-critical / process-critical / monitoring-only) each step the band up/down one
+  ordinal notch, then CISA **KEV** listing floors the result at High regardless of the
+  other factors. Every step — including no-ops — is recorded in a `rule_trace`, so
+  every severity score shows exactly which rule produced it.
+- **The core agentic decision**: if exposure or asset-criticality tier can't be
+  confidently determined from the report text, triage flags `needs_clarification`
+  (with a provisional score still attached, never withheld) instead of guessing.
+  Deliberately does *not* trigger on missing CVSS, which gets a documented neutral
+  default (Medium) instead.
+- **KEV is checked independently**, not trusted from the report text — the bundled
+  sample advisory *claims* KEV listing, but the real CISA feed shows this fictional CVE
+  as `not_listed`, and the system reports that honestly rather than taking the report's
+  word for it.
+
 ## Design decisions worth noting
 
 - **Defang handling is in place from day one.** Real reports defang indicators; a naive
@@ -54,7 +74,8 @@ technique matches:
 
 ### Option A — Docker Compose (full stack)
 
-Brings up the API plus Postgres/pgvector (the DB is unused in Day 1 but proves the infra):
+Brings up the API plus Postgres/pgvector (the DB is currently unused but proves the
+infra; see [Known limitations](#known-limitations)):
 
 ```bash
 docker compose up --build
@@ -168,6 +189,44 @@ Abridged response:
 `rerank_score` is a raw, unbounded cross-encoder logit — not a probability. `top1_margin`
 (the gap to the runner-up) is what the confidence gate actually thresholds on.
 
+```powershell
+# PowerShell — /triage, run the bundled sample advisory
+$body = @{
+  text      = (Get-Content -Raw data/samples/sample_advisory_01.txt)
+  report_id = "sample-01"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/triage `
+  -ContentType application/json -Body $body | ConvertTo-Json -Depth 6
+```
+
+```bash
+# curl
+curl -X POST http://localhost:8000/triage \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"A vulnerability tracked as CVE-2026-9999 has a CVSS v3.1 base score of 8.1. The interface is internet-facing and controls a safety-critical process.","report_id":"demo"}'
+```
+
+Abridged response:
+
+```json
+{
+  "context": { "exposure": "internet_facing", "asset_tier": "safety_critical" },
+  "findings": [
+    {
+      "cve_id": "CVE-2026-2841", "cvss_score": 9.8, "kev_status": "not_listed",
+      "severity": "Critical",
+      "rule_trace": [
+        { "rule": "cvss_base", "detail": "CVSS score 9.8 maps to base band Critical.", "resulting_band": "Critical" },
+        { "rule": "exposure", "detail": "Internet-facing: escalated one band.", "resulting_band": "Critical" },
+        { "rule": "asset_tier", "detail": "Safety-critical asset: escalated one band.", "resulting_band": "Critical" },
+        { "rule": "kev", "detail": "not confirmed exploited; no adjustment applied.", "resulting_band": "Critical" }
+      ]
+    }
+  ],
+  "quality": { "decision": "scored", "reason": "Exposure and asset-criticality tier were both specified..." }
+}
+```
+
 ## Testing
 
 ```bash
@@ -193,24 +252,26 @@ pass before merging.
 
 ```
 app/
-  main.py            FastAPI app (/health, /extract, /classify)
+  main.py            FastAPI app (/health, /extract, /classify, /triage)
   config.py          settings (pydantic-settings)
   api/routes/        HTTP routes
   schemas/           Pydantic models (incl. the provenance model)
   extraction/        ioc.py · ner.py · provenance.py · service.py   <- implemented
   classification/    corpus.py · retrieval.py · reranking.py · service.py   <- implemented
+  triage/            signals.py · kev.py · cascade.py · service.py  <- implemented
   ingestion/         placeholder (later: PDF/HTML -> text)
-  triage/            placeholder (next: severity cascade + clarification branch)
   orchestration/     placeholder (next: LangGraph agent graph + trace)
 data/
   gazetteers/        curated threat-actor / ICS-vendor / sector lists
   classification/    committed ATT&CK-for-ICS technique corpus (79 techniques)
+  triage/            curated exposure / asset-criticality-tier keyword lists
+  kev/               committed CISA Known Exploited Vulnerabilities snapshot
   samples/           sample report text (synthetic seed + your real reports)
 research/            Phase-1 R&D: classification method bake-off + confidence calibration
 tests/               pytest unit + endpoint tests
 ```
 
-## Known limitations (Day 1)
+## Known limitations
 
 Documented honestly rather than hidden — an expanded version will ship with the final writeup.
 
@@ -239,15 +300,32 @@ Documented honestly rather than hidden — an expanded version will ship with th
   exercised by the bake-off, which worked on pre-curated behaviour snippets. The
   standalone `/classify` endpoint avoids this by requiring the caller to supply
   behaviours explicitly.
+- **Exposure/asset-tier detection is plain keyword matching**, not NLP — it can't
+  distinguish a current-state claim from a recommendation (e.g. "the interface is
+  internet-facing... operators should segment the network" resolves to `unknown`,
+  correctly but conservatively) or catch novel phrasing outside the curated lists.
+- **CVE-to-CVSS pairing is same-sentence-or-nothing.** A report with several CVEs and
+  several CVSS mentions spread across paragraphs will leave some CVEs unassociated
+  rather than guess a wrong pairing.
+- **The severity cascade's specific rule design (band-stepping, KEV-as-floor, the
+  neutral CVSS default) is a considered but original design**, not derived from a
+  published standard beyond the CVSS band boundaries themselves — a legitimate
+  alternative (e.g. numeric multipliers) exists and was deliberately not chosen; see
+  `app/triage/cascade.py`'s docstring for the reasoning.
+- **Postgres/pgvector runs in `docker-compose.yml` but nothing uses it.** The
+  classification corpus is only 79 vectors — trivial in-memory numpy, no DB needed for
+  correctness at this scale. A better eventual use is persisting orchestration's agent
+  trace / advisory audit trail, not vector search.
 
 ## Roadmap
 
 - ~~Extraction + classification as a plain pipeline; Phase-1 R&D bake-off to pick the
   ATT&CK-for-ICS mapping method.~~ **Done.**
-- **Next** — Triage: a hand-designed, fully-traceable severity cascade (CVSS band ×
-  exposure × asset-criticality × CISA KEV), with the *clarification-vs-guess* branch —
-  the core agentic decision — as a real conditional edge. Then LangGraph orchestration
-  wrapping extraction → classification → triage, with an agent trace log.
+- ~~Triage: a hand-designed, fully-traceable severity cascade (CVSS band × exposure ×
+  asset-criticality × CISA KEV), with the *clarification-vs-guess* branch — the core
+  agentic decision.~~ **Done.**
+- **Next** — LangGraph orchestration wrapping extraction → classification → triage,
+  with the extraction and triage decisions as real conditional edges, plus an agent
+  trace log.
 - **Later** — React frontend (advisory + agent trace side by side), scale evaluation to
   ~25 reports, and the writeup (precision/recall, ranking-agreement, limitations).
-```

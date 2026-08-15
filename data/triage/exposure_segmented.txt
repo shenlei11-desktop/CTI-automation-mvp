@@ -1,0 +1,12 @@
+# Phrases indicating a device/system is segmented/isolated from the internet
+# (case-insensitive substring match). One phrase per line. '#' lines are ignored.
+
+air-gapped
+air gapped
+segmented network
+network segmentation
+isolated network
+not internet-facing
+no internet connectivity
+segmented from the internet
+properly segmented
