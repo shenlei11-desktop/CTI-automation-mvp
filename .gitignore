@@ -25,6 +25,7 @@ research/data/labeled_dataset.local.jsonl
 
 # Research: on-disk LLM response cache (regenerable, machine/run-specific).
 research/data/.llm_cache.json
+research/data/.llm_cache_frontier_arbiter.json
 
 # Environment / secrets
 .env
