@@ -4,7 +4,7 @@ One-off exploratory tooling, **not** shipped app code. This directory answers a 
 question that gates the real `app/classification/` build: **which method should map
 extracted attacker-behaviour text to MITRE ATT&CK for ICS techniques?**
 
-Two notebooks, sharing one foundation:
+Three notebooks, sharing one foundation:
 
 - [`classification_bakeoff.ipynb`](classification_bakeoff.ipynb) — the rigorous 4-way
   method comparison (the main deliverable).
@@ -12,6 +12,10 @@ Two notebooks, sharing one foundation:
   tuning ablations (embedding model, corpus representation, reranker model, LLM
   size/prompt, retrieval-window size) on the *same* eval set and metrics, one variable
   changed at a time.
+- [`classification_frontier_arbiter.ipynb`](classification_frontier_arbiter.ipynb) —
+  Method E: a frontier LLM reasons over Method D's own retrieved+reranked candidates
+  (ACH-style evidence for/against each), instead of ranking from scratch. See "Frontier
+  LLM as arbiter" below.
 
 ## Why v2 — a foundation rebuild, not just a tuning pass
 
@@ -45,6 +49,11 @@ Four methods are compared, all scored identically:
 - **C — Hybrid**: embeddings retrieve top-N candidates; the LLM ranks among just those.
 - **D — Retrieve + rerank**: same retrieval, but a small cross-encoder reranker (no
   LLM) re-orders the candidates instead.
+- **E — Frontier-LLM arbiter**: same retrieval+rerank as D, but a frontier LLM (via
+  `opencode_client`, not the local Ollama model) reasons over D's own top-K candidates —
+  weighing evidence for/against each ([Analysis of Competing
+  Hypotheses](https://en.wikipedia.org/wiki/Analysis_of_competing_hypotheses)-style) —
+  instead of ranking the full catalogue from scratch. See below.
 
 ## Fully local — no cloud APIs
 
@@ -56,6 +65,17 @@ Four methods are compared, all scored identically:
   a JSON *schema* constraining `technique_id` to an enum of valid IDs — hallucinated
   IDs are structurally impossible, not just discouraged — and forces exactly
   `LLM_RANK_SIZE` ranked predictions (fixes an earlier under-prediction problem).
+- **Frontier-LLM client**: `opencode_client` shells out to the `opencode` CLI
+  (`opencode run`, NDJSON output parsed) instead of the local Ollama daemon — the only
+  working entry point for the flat-rate `opencode-go` plan (the raw HTTP completions
+  endpoint returns `401 Insufficient balance` when called directly). The prompt is sent
+  as an attached file (`-f <path>`), not as the `run` argument — a real prompt routinely
+  exceeds `cmd.exe`'s ~8191-char command-line limit on Windows (`npx` always resolves to
+  `npx.cmd`, always run through `cmd.exe`), which failed silently as an empty reply
+  until traced to the actual subprocess exit code. It deliberately has **no**
+  schema-constrained mode — the CLI exposes no grammar-constrained decoding, so unlike
+  `ollama_client.classify_structured` it only emits free-form JSON with one corrective
+  retry.
 - **Embeddings** run locally via [`fastembed`](https://github.com/qdrant/fastembed)
   (ONNX runtime; default `BAAI/bge-base-en-v1.5`) — chosen over `sentence-transformers`
   because the latter pulls in PyTorch, whose deeply-nested license files overflow
@@ -64,12 +84,37 @@ Four methods are compared, all scored identically:
   `Xenova/ms-marco-MiniLM-L-6-v2`).
 - **Response cache**: `data/.llm_cache.json` (gitignored) keys on hash(model + prompt +
   format), so re-running a notebook — or resuming after an interruption — is fast and
-  never repeats a completed call.
+  never repeats a completed call. `classification_frontier_arbiter.ipynb` uses its own
+  `data/.llm_cache_frontier_arbiter.json` (also gitignored) rather than sharing this
+  file — keeps a bad run in one notebook from ever poisoning the other's cached results,
+  and the `model` field in the cache key already lets several models' entries coexist
+  safely if this notebook is re-run against more than one.
 
 Honest caveats, stated in both notebooks too: a small local model is weaker at
 structured reasoning than a frontier model, so LLM-based results here are a floor, not
 a ceiling; and no ICS-domain-specific embedding/reranker model exists via `fastembed` —
 `bge`/`ms-marco` are general-purpose web-search models, a real ceiling on A and D.
+
+## Frontier LLM as arbiter (Method E)
+
+A frontier LLM ranking the full 79-technique catalogue from scratch was **not** tried —
+external evidence (a 2026 study evaluating open-source LLMs 8B–236B params on ATT&CK
+classification) found that shape weak even at 236B params (micro-F1 0.22), with
+retrieval grounding — not prompt tuning — the one lever that helped. So Method E instead
+gives the frontier model Method D's own top-6 retrieved+reranked candidates and asks it
+to weigh evidence for/against each (ACH-style) rather than pick from the full corpus.
+
+First run, `opencode-go/qwen3.8-max`, same 50-example stratified sample for both methods:
+
+| method | MRR | MAP | Recall@1 | Recall@3 |
+|---|---|---|---|---|
+| D: Retrieve+rerank | 0.508 | 0.51 | 0.42 | 0.58 |
+| E: ACH arbiter | **0.640** | **0.64** | **0.61** | **0.66** |
+
+0 hallucinated IDs across 50 calls (structurally bounded to the 6 offered candidates),
+2/50 parse failures. A real, meaningful margin — but n=50 is one stratified sample from
+one model; not yet re-run at full scale or against a second model to check the margin
+holds up.
 
 ## How to run
 
